@@ -1,8 +1,17 @@
 # Actions Runner Monitor
 
+[![Build](https://github.com/thibauult/actions-runner-monitor/actions/workflows/build.yml/badge.svg)](https://github.com/thibauult/actions-runner-monitor/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/thibauult/actions-runner-monitor)](https://github.com/thibauult/actions-runner-monitor/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/thibauult/actions-runner-monitor/total)](https://github.com/thibauult/actions-runner-monitor/releases)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
+![Swift](https://img.shields.io/badge/Swift-F05138?logo=swift&logoColor=white)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 A macOS menu bar app that shows what your self-hosted GitHub Actions runners are doing: offline, idle, or which job is running and for how long. It also lists their recent jobs and whether each one passed.
 
 It needs no setup. It finds every runner you installed as a service with `./svc.sh install` and reads that runner's own files, so there's nothing to fill in.
+
+<p align="center"><img src="docs/screenshot.webp" alt="The menu bar panel listing a runner's recent jobs" width="480"></p>
 
 | State | Icon |
 |---|---|
@@ -74,4 +83,4 @@ To see what the app sees without opening the UI, run:
 
 ## License
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)
