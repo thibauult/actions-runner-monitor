@@ -124,7 +124,24 @@ struct RunnerSection: View {
         }
     }
 
+    @ViewBuilder
+    private func linked<Content: View>(_ job: JobRun, @ViewBuilder content: () -> Content) -> some View {
+        if let url = job.url {
+            Button { NSWorkspace.shared.open(url) } label: {
+                content().contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open this job on GitHub")
+        } else {
+            content()
+        }
+    }
+
     private func currentJobView(_ job: JobRun) -> some View {
+        linked(job) { currentJobContent(job) }
+    }
+
+    private func currentJobContent(_ job: JobRun) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 4) {
                 Text(job.name).font(.body.weight(.semibold))
@@ -136,6 +153,10 @@ struct RunnerSection: View {
     }
 
     private func recentJobRow(_ job: JobRun) -> some View {
+        linked(job) { recentJobContent(job) }
+    }
+
+    private func recentJobContent(_ job: JobRun) -> some View {
         let (symbol, color) = Format.resultSymbol(job.result)
         return HStack(alignment: .firstTextBaseline) {
             Image(systemName: symbol).foregroundStyle(color)

@@ -84,6 +84,7 @@ final class Monitor: ObservableObject {
 /// Reads every runner's state. It's an actor so the work (spawning launchctl,
 /// reading logs) happens off the main thread and can't stall the menu bar.
 actor RunnerProbe {
+    private var links = JobLinkResolver()
     private var parsedLogs: [URL: (modified: Date, size: Int, jobs: [JobRun])] = [:]
 
     /// `nil` when launchd couldn't be asked which services are running.
@@ -96,7 +97,8 @@ actor RunnerProbe {
             let jobs: [JobRun]
             let logError: String?
             do {
-                jobs = try parsedJobs(at: runner.logURL)
+                let parsed = try parsedJobs(at: runner.logURL)
+                jobs = runner.diagURL.map { links.resolve(parsed, diagURL: $0) } ?? parsed
                 logError = nil
             } catch {
                 jobs = []

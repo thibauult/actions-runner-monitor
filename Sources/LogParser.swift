@@ -10,6 +10,8 @@ struct JobRun: Identifiable, Equatable, Sendable {
     let startedAt: Date
     var finishedAt: Date?
     var result: String?
+    /// The job's page on GitHub, once its worker log is found.
+    var url: URL?
 
     var isFinished: Bool { result != nil }
 }

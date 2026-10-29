@@ -13,8 +13,12 @@ struct Runner: Identifiable, Hashable, Sendable {
     /// Org, repo or enterprise the runner is registered to.
     let gitHubURL: URL?
     let agentID: Int?
+    /// The runner's install directory; its `_diag` folder holds the per-job worker logs.
+    let workDirectory: URL?
 
     var id: String { label }
+
+    var diagURL: URL? { workDirectory?.appendingPathComponent("_diag") }
 
     /// `my-org` or `owner/repo`, for display.
     var scope: String? {
@@ -59,15 +63,16 @@ enum RunnerDiscovery {
 
         let logURL = (plist["StandardOutPath"] as? String).map(URL.init(fileURLWithPath:))
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/\(label)/stdout.log")
-        let settings = (plist["WorkingDirectory"] as? String)
-            .flatMap { runnerSettings(in: URL(fileURLWithPath: $0)) } ?? [:]
+        let workDirectory = (plist["WorkingDirectory"] as? String).map(URL.init(fileURLWithPath:))
+        let settings = workDirectory.flatMap(runnerSettings(in:)) ?? [:]
 
         return Runner(
             label: label,
             name: settings["agentName"] as? String ?? String(label.dropFirst(labelPrefix.count)),
             logURL: logURL,
             gitHubURL: (settings["gitHubUrl"] as? String).flatMap(URL.init(string:)),
-            agentID: settings["agentId"] as? Int
+            agentID: settings["agentId"] as? Int,
+            workDirectory: workDirectory
         )
     }
 
