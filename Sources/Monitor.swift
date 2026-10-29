@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import SwiftUI
 
-enum RunnerState: Sendable {
+enum RunnerState: Sendable, Equatable {
     case offline, idle, busy
 
     var title: String {
@@ -30,7 +30,7 @@ enum RunnerState: Sendable {
     }
 }
 
-struct RunnerStatus: Identifiable, Sendable {
+struct RunnerStatus: Identifiable, Sendable, Equatable {
     let runner: Runner
     let state: RunnerState
     let currentJob: JobRun?
@@ -62,6 +62,7 @@ final class Monitor: ObservableObject {
 
     private let probe = RunnerProbe()
     private var refreshLoop: Task<Void, Never>?
+    private var announcedJobs: Set<String> = []
 
     init() {
         refreshLoop = Task { [weak self] in
@@ -75,9 +76,22 @@ final class Monitor: ObservableObject {
     func refresh() async {
         // A failed probe keeps the last known state rather than flashing everything offline.
         if let snapshot = await probe.snapshot(historyLimit: Defaults.historyLimit) {
-            statuses = snapshot
+            notifyOfNewJobs(in: snapshot)
+            // Republishing identical state re-lays out the status item and can swallow clicks.
+            if snapshot != statuses { statuses = snapshot }
         }
         hasLoaded = true
+    }
+
+    /// Jobs already running when the app starts are seeded silently, so only
+    /// jobs that start while it's watching notify.
+    private func notifyOfNewJobs(in snapshot: [RunnerStatus]) {
+        for status in snapshot {
+            guard let job = status.currentJob else { continue }
+            let key = "\(status.id)|\(job.startedAt.timeIntervalSince1970)"
+            guard announcedJobs.insert(key).inserted, hasLoaded, Defaults.notifyOnJobStart else { continue }
+            Notifier.jobStarted(job, on: status.runner)
+        }
     }
 }
 

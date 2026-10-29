@@ -34,6 +34,17 @@ enum Entry {
             return
         }
 
+        // `ActionsRunnerMonitor --write-icon <png>` renders the app icon; build.sh uses it.
+        if let flag = arguments.firstIndex(of: "--write-icon"), arguments.indices.contains(flag + 1) {
+            do {
+                try GitHubMark.writeAppIcon(to: URL(fileURLWithPath: arguments[flag + 1]))
+            } catch {
+                FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+                exit(1)
+            }
+            return
+        }
+
         // Same as the "Start at login and reopen if it quits" setting, for scripts.
         if arguments.contains("--install-agent") || arguments.contains("--uninstall-agent") {
             do {
@@ -52,6 +63,7 @@ enum Entry {
         }
 
         guard Startup.shouldRun(arguments: arguments) else { return }
+        if Defaults.notifyOnJobStart { Notifier.requestAuthorization() }
         ActionsRunnerMonitorApp.main()
     }
 

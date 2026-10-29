@@ -30,6 +30,34 @@ enum GitHubMark {
         return image
     }()
 
+    /// The mark on a dark rounded square, for the app icon (shown in notifications).
+    /// `build.sh` renders it into the bundle with `--write-icon`.
+    static func writeAppIcon(to url: URL, side: Int = 1024) throws {
+        let size = CGFloat(side)
+        let bezier = parse(path)
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
+            let tile = rect.insetBy(dx: size * 0.06, dy: size * 0.06)
+            NSColor(white: 0.1, alpha: 1).setFill()
+            NSBezierPath(roundedRect: tile, xRadius: size * 0.2, yRadius: size * 0.2).fill()
+
+            let markSide = size * 0.6
+            let scale = markSide / 24
+            let offset = (size - markSide) / 2
+            var transform = AffineTransform(translationByX: offset, byY: offset)
+            transform.prepend(AffineTransform(scaleByX: scale, byY: scale))
+            let scaled = bezier.copy() as! NSBezierPath
+            scaled.transform(using: transform)
+            NSColor.white.setFill()
+            scaled.fill()
+            return true
+        }
+        guard let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try png.write(to: url)
+    }
+
     /// Minimal SVG path parser: only the commands the mark uses (M, c, C, z).
     private static func parse(_ d: String) -> NSBezierPath {
         let bezier = NSBezierPath()

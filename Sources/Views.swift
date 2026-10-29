@@ -8,6 +8,11 @@ enum Format {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 
+    static func minutes(from start: Date, to end: Date) -> String {
+        let m = max(0, Int(end.timeIntervalSince(start))) / 60
+        return m >= 60 ? "\(m / 60)h\(String(format: "%02d", m % 60))" : "\(m)m"
+    }
+
     static func resultSymbol(_ result: String?) -> (String, Color) {
         switch result {
         case "Succeeded": ("checkmark.circle.fill", .green)
@@ -26,10 +31,12 @@ struct MenuBarLabel: View {
         let visible = monitor.statuses.filter { !hidden.labels.contains($0.id) }
         let symbol = visible.overallState?.symbol ?? "questionmark.circle"
         if let job = visible.oldestCurrentJob {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
+            // Ticks once a minute: a per-second label resizes the status item constantly
+            // and makes the menu unclickable.
+            TimelineView(.periodic(from: .now, by: 60)) { context in
                 Image(nsImage: GitHubMark.image)
                 Image(systemName: symbol)
-                Text(Format.duration(from: job.startedAt, to: context.date))
+                Text(Format.minutes(from: job.startedAt, to: context.date))
             }
         } else {
             Image(nsImage: GitHubMark.image)
@@ -181,6 +188,7 @@ struct SettingsView: View {
     @AppStorage(Defaults.refreshIntervalKey) private var refreshInterval = Defaults.defaultRefreshInterval
     @AppStorage(Defaults.historyLimitKey) private var historyLimit = Defaults.defaultHistoryLimit
     @AppStorage(Defaults.hiddenRunnersKey) private var hidden = LabelSet()
+    @AppStorage(Defaults.notifyOnJobStartKey) private var notifyOnJobStart = Defaults.defaultNotifyOnJobStart
     @State private var keepsRunning = SelfAgent.isInstalled
     @State private var agentError: String?
 
@@ -194,6 +202,19 @@ struct SettingsView: View {
                 }
             } footer: {
                 Text("Runs the monitor as a launchd agent. Quit from the menu still stops it until your next login.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Notify when a job starts", isOn: $notifyOnJobStart)
+                    .onChange(of: notifyOnJobStart) { _, enabled in
+                        if enabled { Notifier.requestAuthorization() }
+                    }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text("If nothing appears, allow notifications for this app in System Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

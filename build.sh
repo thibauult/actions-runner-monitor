@@ -23,6 +23,17 @@ for arch in arm64 x86_64; do
 done
 lipo -create build/obj/$EXECUTABLE-* -output "$APP/Contents/MacOS/$EXECUTABLE"
 
+# The app icon is what notifications show; render it from the same GitHub mark.
+ICONSET="build/obj/AppIcon.iconset"
+rm -rf "$ICONSET"
+mkdir -p "$ICONSET" "$APP/Contents/Resources"
+"$APP/Contents/MacOS/$EXECUTABLE" --write-icon build/obj/icon-1024.png
+for size in 16 32 128 256 512; do
+  sips -z $size $size build/obj/icon-1024.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z $((size * 2)) $((size * 2)) build/obj/icon-1024.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+
 # Ad-hoc signature: enough for launchd and for running a locally built copy.
 codesign --force --sign - "$APP"
 echo "Built $APP"
