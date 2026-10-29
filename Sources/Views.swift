@@ -27,10 +27,12 @@ struct MenuBarLabel: View {
         let symbol = visible.overallState?.symbol ?? "questionmark.circle"
         if let job = visible.oldestCurrentJob {
             TimelineView(.periodic(from: .now, by: 1)) { context in
+                Image(nsImage: GitHubMark.image)
                 Image(systemName: symbol)
                 Text(Format.duration(from: job.startedAt, to: context.date))
             }
         } else {
+            Image(nsImage: GitHubMark.image)
             Image(systemName: symbol)
         }
     }
