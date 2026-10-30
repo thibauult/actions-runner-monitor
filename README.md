@@ -11,7 +11,7 @@ A macOS menu bar app that shows what your self-hosted GitHub Actions runners are
 
 It needs no setup. It finds every runner you installed as a service with `./svc.sh install` and reads that runner's own files, so there's nothing to fill in.
 
-<p align="center"><img src="docs/screenshot.webp" alt="The menu bar panel listing a runner's recent jobs" width="480"></p>
+<p align="center"><img src="docs/screenshot.png" alt="The menu bar panel listing a runner's recent jobs" width="480"></p>
 
 | State | Icon |
 |---|---|
