@@ -12,8 +12,12 @@ struct JobRun: Identifiable, Equatable, Sendable {
     var result: String?
     /// The job's page on GitHub, once its worker log is found.
     var url: URL?
+    /// The repository's short name (`milkup-ios`), once its worker log is found.
+    var repo: String?
 
     var isFinished: Bool { result != nil }
+    /// "repo | job" when the repository is known.
+    var title: String { repo.map { "\($0) | \(name)" } ?? name }
 }
 
 enum LogParser {

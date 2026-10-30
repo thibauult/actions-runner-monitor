@@ -18,7 +18,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = "Job started"
         content.subtitle = runner.name
-        content.body = job.name
+        content.body = job.title
         content.sound = .default
         if let url = job.url ?? runner.settingsURL {
             content.userInfo[urlKey] = url.absoluteString

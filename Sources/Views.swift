@@ -45,6 +45,46 @@ struct MenuBarLabel: View {
     }
 }
 
+/// Reports whether the hosting window is on screen. The menu bar window's content
+/// stays alive while it's closed, so `onAppear` can't tell.
+struct WindowVisibility: NSViewRepresentable {
+    let onChange: (Bool) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = TrackingView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        (view as? TrackingView)?.onChange = onChange
+    }
+
+    private final class TrackingView: NSView {
+        var onChange: ((Bool) -> Void)?
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            observer.map(NotificationCenter.default.removeObserver)
+            observer = nil
+            guard let window else {
+                onChange?(false)
+                return
+            }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.report() }
+            report()
+        }
+
+        private func report() {
+            onChange?(window?.occlusionState.contains(.visible) ?? false)
+        }
+
+        deinit { observer.map(NotificationCenter.default.removeObserver) }
+    }
+}
+
 struct MonitorPanel: View {
     @ObservedObject var monitor: Monitor
     @AppStorage(Defaults.hiddenRunnersKey) private var hidden = LabelSet()
@@ -57,7 +97,7 @@ struct MonitorPanel: View {
                 Text(emptyMessage).foregroundStyle(.secondary)
             }
             ForEach(visible) { status in
-                RunnerSection(status: status)
+                RunnerSection(status: status, monitor: monitor)
                 if status.id != visible.last?.id {
                     Divider()
                 }
@@ -76,6 +116,7 @@ struct MonitorPanel: View {
         }
         .padding()
         .frame(width: 360)
+        .background(WindowVisibility { monitor.setPanelVisible($0) })
     }
 
     private var emptyMessage: String {
@@ -87,6 +128,9 @@ struct MonitorPanel: View {
 
 struct RunnerSection: View {
     let status: RunnerStatus
+    @ObservedObject var monitor: Monitor
+
+    private var isPending: Bool { monitor.pending[status.id] != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -101,6 +145,12 @@ struct RunnerSection: View {
                 Label(status.state.title, systemImage: status.state.symbol)
                     .foregroundStyle(status.state.color)
                     .font(.subheadline)
+                Toggle("Running", isOn: runningBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .disabled(isPending)
+                    .help(status.state == .offline ? "Start this runner" : "Stop this runner")
             }
 
             if let job = status.currentJob {
@@ -120,6 +170,9 @@ struct RunnerSection: View {
             if let error = status.error {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
+            if let error = monitor.actionErrors[status.id] {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
 
             HStack {
                 Button("Open log") { NSWorkspace.shared.open(status.runner.logURL) }
@@ -129,6 +182,31 @@ struct RunnerSection: View {
             }
             .controlSize(.small)
         }
+    }
+
+    /// On while the service is up. Flipping it asks launchd; the state follows on the next refresh.
+    private var runningBinding: Binding<Bool> {
+        Binding(
+            get: { isPending ? pendingTarget : status.state != .offline },
+            set: { toggle(running: $0) }
+        )
+    }
+
+    private var pendingTarget: Bool { monitor.pending[status.id] ?? false }
+
+    private func toggle(running: Bool) {
+        if !running, status.state == .busy, !confirmStop() { return }
+        Task { await monitor.setRunning(running, for: status.runner) }
+    }
+
+    private func confirmStop() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Stop \(status.runner.name)?"
+        alert.informativeText = "It is running a job, which will be cancelled."
+        alert.addButton(withTitle: "Stop Runner")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @ViewBuilder
@@ -149,9 +227,10 @@ struct RunnerSection: View {
     }
 
     private func currentJobContent(_ job: JobRun) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        // Ticking only while the panel is open: a closed window shouldn't redraw every second.
+        TimelineView(.periodic(from: .now, by: monitor.panelVisible ? 1 : 3600)) { context in
             VStack(alignment: .leading, spacing: 4) {
-                Text(job.name).font(.body.weight(.semibold))
+                Text(job.title).font(.body.weight(.semibold))
                 Text("Started \(job.startedAt.formatted(date: .omitted, time: .shortened)) · \(Format.duration(from: job.startedAt, to: context.date)) elapsed")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -168,7 +247,7 @@ struct RunnerSection: View {
         return HStack(alignment: .firstTextBaseline) {
             Image(systemName: symbol).foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
-                Text(job.name).lineLimit(1)
+                Text(job.title).lineLimit(1)
                 Text("\(job.result ?? "") · \(job.startedAt.formatted(.relative(presentation: .named)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -186,6 +265,7 @@ struct RunnerSection: View {
 struct SettingsView: View {
     @ObservedObject var monitor: Monitor
     @AppStorage(Defaults.refreshIntervalKey) private var refreshInterval = Defaults.defaultRefreshInterval
+    @AppStorage(Defaults.backgroundRefreshIntervalKey) private var backgroundRefreshInterval = Defaults.defaultBackgroundRefreshInterval
     @AppStorage(Defaults.historyLimitKey) private var historyLimit = Defaults.defaultHistoryLimit
     @AppStorage(Defaults.hiddenRunnersKey) private var hidden = LabelSet()
     @AppStorage(Defaults.notifyOnJobStartKey) private var notifyOnJobStart = Defaults.defaultNotifyOnJobStart
@@ -221,7 +301,10 @@ struct SettingsView: View {
 
             Section("Display") {
                 Stepper(value: $refreshInterval, in: 1...60, step: 1) {
-                    Text("Check every \(Int(refreshInterval)) s")
+                    Text("Check every \(Int(refreshInterval)) s while open")
+                }
+                Stepper(value: $backgroundRefreshInterval, in: 5...300, step: 5) {
+                    Text("Check every \(Int(backgroundRefreshInterval)) s in the background")
                 }
                 Stepper(value: $historyLimit, in: 1...50) {
                     Text("Show \(historyLimit) recent jobs per runner")

@@ -7,7 +7,7 @@
 ![Swift](https://img.shields.io/badge/Swift-F05138?logo=swift&logoColor=white)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-A macOS menu bar app that shows what your self-hosted GitHub Actions runners are doing: offline, idle, or which job is running and for how long. It also lists their recent jobs and whether each one passed.
+A macOS menu bar app that shows what your self-hosted GitHub Actions runners are doing: paused, idle, or which job is running and for how long. It also lists their recent jobs and whether each one passed.
 
 It needs no setup. It finds every runner you installed as a service with `./svc.sh install` and reads that runner's own files, so there's nothing to fill in.
 

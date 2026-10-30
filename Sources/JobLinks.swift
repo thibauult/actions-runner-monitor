@@ -8,10 +8,13 @@ struct WorkerLogInfo: Sendable {
     let startedAt: Date
     let jobName: String
     let url: URL
+    let repo: String
 }
 
 struct JobLinkResolver {
     private var cache: [URL: WorkerLogInfo] = [:]
+    /// Old worker logs without a job message (a runner update, say); not worth reading again.
+    private var unreadable: Set<URL> = []
 
     private static let fileName = #/^Worker_(\d{8}-\d{6})-utc\.log$/#
     private static let jobName = #/"jobDisplayName": "((?:[^"\\]|\\.)*)"/#
@@ -34,10 +37,11 @@ struct JobLinkResolver {
         return jobs.map { job in
             var job = job
             // The worker starts a moment after the listener prints "Running job".
-            job.url = workers
+            let match = workers
                 .filter { $0.jobName == job.name && abs($0.startedAt.timeIntervalSince(job.startedAt)) < 300 }
-                .min { abs($0.startedAt.timeIntervalSince(job.startedAt)) < abs($1.startedAt.timeIntervalSince(job.startedAt)) }?
-                .url
+                .min { abs($0.startedAt.timeIntervalSince(job.startedAt)) < abs($1.startedAt.timeIntervalSince(job.startedAt)) }
+            job.url = match?.url
+            job.repo = match?.repo
             return job
         }
     }
@@ -52,12 +56,17 @@ struct JobLinkResolver {
             seen.insert(file)
             if let cached = cache[file] {
                 infos.append(cached)
-            } else if let info = Self.read(file, startedAt: started) {
-                cache[file] = info
-                infos.append(info)
+            } else if !unreadable.contains(file) {
+                if let info = Self.read(file, startedAt: started) {
+                    cache[file] = info
+                    infos.append(info)
+                } else if started.timeIntervalSinceNow < -120 {
+                    unreadable.insert(file)
+                }
             }
         }
         cache = cache.filter { seen.contains($0.key) }
+        unreadable.formIntersection(seen)
         return infos
     }
 
@@ -74,7 +83,7 @@ struct JobLinkResolver {
         let check = head.firstMatch(of: checkRunID).map { "/job/\($0.1)" } ?? ""
 
         guard let url = URL(string: "\(server)/\(repo)/actions/runs/\(run)\(check)") else { return nil }
-        return WorkerLogInfo(startedAt: startedAt, jobName: name, url: url)
+        return WorkerLogInfo(startedAt: startedAt, jobName: name, url: url, repo: String(repo.split(separator: "/").last ?? Substring(repo)))
     }
 
     private static func unescape(_ json: String) -> String {

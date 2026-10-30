@@ -6,6 +6,8 @@ import Foundation
 struct Runner: Identifiable, Hashable, Sendable {
     /// launchd label, `actions.runner.<scope>.<name>`.
     let label: String
+    /// The launchd plist `svc.sh install` wrote; loading it starts the service.
+    let plistURL: URL
     /// Runner name as registered on GitHub.
     let name: String
     /// The service's stdout, where the listener prints one line per job start and end.
@@ -68,6 +70,7 @@ enum RunnerDiscovery {
 
         return Runner(
             label: label,
+            plistURL: url,
             name: settings["agentName"] as? String ?? String(label.dropFirst(labelPrefix.count)),
             logURL: logURL,
             gitHubURL: (settings["gitHubUrl"] as? String).flatMap(URL.init(string:)),
