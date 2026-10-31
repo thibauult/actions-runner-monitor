@@ -71,10 +71,10 @@ enum Entry {
         let services = Launchd.runningServices() ?? [:]
         let runners = RunnerDiscovery.discover()
         if runners.isEmpty {
-            print("No actions.runner.* agents in \(RunnerDiscovery.launchAgentsURL.path)")
+            print("No actions.runner.* agents in \(RunnerDiscovery.launchAgentsURL.path), and no runner directories added")
         }
         for runner in runners {
-            let pid = services[runner.label].map { "pid \($0)" } ?? "not running"
+            let pid = ProcessTable.pid(of: runner, services: services).map { "pid \($0)" } ?? "not running"
             print("\(runner.name) [\(runner.label)] \(pid)")
             print("  log: \(runner.logURL.path)")
             print("  github: \(runner.settingsURL?.absoluteString ?? "-")")

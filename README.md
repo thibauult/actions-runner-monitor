@@ -7,9 +7,9 @@
 ![Swift](https://img.shields.io/badge/Swift-F05138?logo=swift&logoColor=white)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-A macOS menu bar app that shows what your self-hosted GitHub Actions runners are doing: paused, idle, or which job is running and for how long. It also lists their recent jobs and whether each one passed.
+A macOS menu bar app that shows what your self-hosted GitHub Actions runners are doing: paused, idle, or which job is running and for how long. It also lists their recent jobs and whether each one passed, links each job to its GitHub run, notifies you when a job starts, and lets you start or stop a runner's service from the panel.
 
-It needs no setup. It finds every runner you installed as a service with `./svc.sh install` and reads that runner's own files, so there's nothing to fill in.
+It needs no setup. It finds every runner you installed as a service with `./svc.sh install` and reads that runner's own files, so there's nothing to fill in. A runner you start with `./run.sh` has no service to find, so add its folder in Settings.
 
 <p align="center"><img src="docs/screenshot.png" alt="The menu bar panel listing a runner's recent jobs" width="480"></p>
 
@@ -46,9 +46,12 @@ Open **Settings…** from the menu bar panel.
 | Setting | Default | `defaults` key |
 |---|---|---|
 | Start at login and reopen if it quits | off | (a launchd agent, see below) |
+| Notify when a job starts | on | `notifyOnJobStart` |
 | How often to check the runners | 3 s | `refreshInterval` (seconds) |
+| How often to check while the panel is closed | 20 s | `backgroundRefreshInterval` (seconds) |
 | Recent jobs shown per runner | 10 | `historyLimit` |
 | Runners hidden from the menu | none | `hiddenRunners` (comma-separated launchd labels) |
+| Runners started in a terminal | none | `runnerDirectories` (array of paths) |
 
 You can also set these from a terminal, for example:
 
@@ -70,6 +73,7 @@ To turn this on or off from a script:
 ## How it works
 
 - **Discovery.** Each `actions.runner.*.plist` in `~/Library/LaunchAgents` is a runner service. Its `StandardOutPath` is the log the app reads. Its `WorkingDirectory` holds the runner's `.runner` file, which supplies the runner name and the org or repo it's registered to.
+- **Terminal runners.** A runner started with `./run.sh` has no service, so add its folder in Settings. The app finds its `Runner.Listener` process by path and reads jobs from the latest `_diag/Runner_*.log`, so it shows the current run's jobs only. It can't start or stop these runners, and one that isn't running doesn't turn the menu bar icon to paused.
 - **State.** `launchctl list` tells whether the service is running. A `Runner.Worker` process under it means a job is in progress.
 - **Jobs.** The listener writes a `Running job: …` line when a job starts and a `Job … completed with result: …` line when it ends. The app parses the last 512 KB of the log, and only when the log has changed.
 

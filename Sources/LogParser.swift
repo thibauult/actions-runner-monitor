@@ -3,6 +3,9 @@ import Foundation
 // The runner service's stdout log, where the listener prints:
 //   2026-10-25 13:40:00Z: Running job: Build and Test iOS App
 //   2026-10-25 13:52:10Z: Job Build and Test iOS App completed with result: Succeeded
+// A runner started in a terminal has no such file, but `_diag/Runner_*.log` traces the
+// same lines:
+//   [2026-10-25 13:40:00Z INFO Terminal] WRITE LINE: 2026-10-25 13:40:00Z: Running job: ...
 
 struct JobRun: Identifiable, Equatable, Sendable {
     let id: Int
@@ -23,6 +26,7 @@ struct JobRun: Identifiable, Equatable, Sendable {
 enum LogParser {
     private static let timestamped = #/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z): (.*)$/#
     private static let completed = #/^Job (.+) completed with result: (\w+)$/#
+    private static let tracePrefix = " INFO Terminal] WRITE LINE: "
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -43,7 +47,8 @@ enum LogParser {
                 }
                 continue
             }
-            guard let match = line.wholeMatch(of: timestamped),
+            let printed = line.range(of: tracePrefix).map { String(line[$0.upperBound...]) } ?? line
+            guard let match = printed.wholeMatch(of: timestamped),
                   let date = dateFormatter.date(from: String(match.1)) else { continue }
             let message = String(match.2)
 

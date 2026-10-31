@@ -8,6 +8,7 @@ enum Defaults {
     static let historyLimitKey = "historyLimit"
     static let hiddenRunnersKey = "hiddenRunners"
     static let notifyOnJobStartKey = "notifyOnJobStart"
+    static let runnerDirectoriesKey = "runnerDirectories"
 
     static let defaultRefreshInterval = 3.0
     static let defaultBackgroundRefreshInterval = 20.0
@@ -29,6 +30,12 @@ enum Defaults {
     /// How often to poll while the panel is closed; job changes arrive through the log watcher.
     static var backgroundRefreshInterval: Double { max(5, UserDefaults.standard.double(forKey: backgroundRefreshIntervalKey)) }
     static var historyLimit: Int { max(1, UserDefaults.standard.integer(forKey: historyLimitKey)) }
+
+    /// Directories of runners started in a terminal, which leave no launchd service to find.
+    static var runnerDirectories: [String] {
+        get { UserDefaults.standard.stringArray(forKey: runnerDirectoriesKey) ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: runnerDirectoriesKey) }
+    }
 }
 
 /// launchd labels of runners hidden from the menu, stored as one comma-separated

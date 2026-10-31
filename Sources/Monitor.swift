@@ -41,12 +41,13 @@ struct RunnerStatus: Identifiable, Sendable, Equatable {
 }
 
 extension Array where Element == RunnerStatus {
-    /// What the menu bar icon shows: a runner being down outranks one being busy.
+    /// What the menu bar icon shows: a service being down outranks one being busy.
+    /// A terminal runner that isn't running is normal, so it only shows if nothing else does.
     var overallState: RunnerState? {
         if isEmpty { return nil }
-        if contains(where: { $0.state == .offline }) { return .offline }
+        if contains(where: { $0.state == .offline && $0.runner.isService }) { return .offline }
         if contains(where: { $0.state == .busy }) { return .busy }
-        return .idle
+        return contains(where: { $0.state == .idle }) ? .idle : .offline
     }
 
     /// The longest-running job, for the menu bar timer.
@@ -110,6 +111,12 @@ final class Monitor: ObservableObject {
             rediscoverPending = true
             wake()
         }
+    }
+
+    /// Picks up a change to the list of runner directories now.
+    func rediscover() {
+        rediscoverPending = true
+        wake()
     }
 
     /// Starts or stops a runner's launchd service.
@@ -212,7 +219,13 @@ actor RunnerProbe {
     private var links = JobLinkResolver()
     private var parsedLogs: [URL: (modified: Date, size: Int, jobs: [JobRun])] = [:]
     private var resolved: [URL: (stamp: Stamp, jobs: [JobRun])] = [:]
-    private var discovered: (stamp: Date?, runners: [Runner])?
+    private var discovered: (stamp: DiscoveryStamp, runners: [Runner])?
+
+    private struct DiscoveryStamp: Equatable {
+        let launchAgents: Date?
+        let directories: [String]
+        let diags: [Date?]
+    }
 
     private struct Stamp: Equatable {
         let log: Date
@@ -225,7 +238,7 @@ actor RunnerProbe {
         guard let servicePIDs = Launchd.runningServices() else { return nil }
 
         return runners(forceRefresh: rediscover).map { runner in
-            let pid = servicePIDs[runner.label]
+            let pid = ProcessTable.pid(of: runner, services: servicePIDs)
             let jobs: [JobRun]
             let logError: String?
             do {
@@ -233,7 +246,8 @@ actor RunnerProbe {
                 logError = nil
             } catch {
                 jobs = []
-                logError = "Can't read \(runner.logURL.path)"
+                // A terminal runner that never started has no log yet.
+                logError = runner.isService ? "Can't read \(runner.logURL.path)" : nil
             }
 
             let openJob = pid == nil ? nil : jobs.last(where: { !$0.isFinished })
@@ -251,9 +265,15 @@ actor RunnerProbe {
         }
     }
 
-    /// The plists are re-read only when the LaunchAgents folder changed.
+    /// The plists are re-read only when the LaunchAgents folder changed, and runner
+    /// directories only when one's `_diag` did: a listener start adds a new log there.
     private func runners(forceRefresh: Bool) -> [Runner] {
-        let stamp = Self.modificationDate(of: RunnerDiscovery.launchAgentsURL)
+        let directories = Defaults.runnerDirectories
+        let stamp = DiscoveryStamp(
+            launchAgents: Self.modificationDate(of: RunnerDiscovery.launchAgentsURL),
+            directories: directories,
+            diags: directories.map { Self.modificationDate(of: URL(fileURLWithPath: $0).appendingPathComponent("_diag")) }
+        )
         if !forceRefresh, let discovered, discovered.stamp == stamp { return discovered.runners }
         let runners = RunnerDiscovery.discover()
         discovered = (stamp, runners)
@@ -315,7 +335,8 @@ enum Launchd {
     /// Loads a runner's service (which starts it), or kicks it if it's loaded but not running.
     /// Returns an error message, or `nil` on success.
     static func start(_ runner: Runner) -> String? {
-        let bootstrap = Shell.run("/bin/launchctl", ["bootstrap", guiDomain, runner.plistURL.path])
+        guard let plistURL = runner.plistURL else { return "\(runner.name) has no service to start" }
+        let bootstrap = Shell.run("/bin/launchctl", ["bootstrap", guiDomain, plistURL.path])
         if bootstrap?.status == 0 { return nil }
         if Shell.run("/bin/launchctl", ["kickstart", "\(guiDomain)/\(runner.label)"])?.status == 0 { return nil }
         return failure("Couldn't start \(runner.name)", bootstrap?.output)
@@ -341,6 +362,38 @@ enum Launchd {
 /// Walks a service's children via libproc, without a subprocess or a scan of
 /// every process on the machine.
 enum ProcessTable {
+    /// The running listener of a service (from launchd's `services`) or terminal runner.
+    static func pid(of runner: Runner, services: [String: pid_t]) -> pid_t? {
+        if runner.isService { return services[runner.label] }
+        return runner.workDirectory.flatMap(listenerPID(in:))
+    }
+
+    /// The listener running from `directory`'s `bin` (or `bin.<version>`, after an
+    /// update) folder. Terminal runners have no service to ask, so this scans all processes.
+    private static func listenerPID(in directory: URL) -> pid_t? {
+        guard let resolved = realpath(directory.path, nil) else { return nil }
+        defer { free(resolved) }
+        let root = String(cString: resolved)
+        return allProcesses().first { pid in
+            let executable = URL(fileURLWithPath: executablePath(pid))
+            return executable.lastPathComponent == "Runner.Listener"
+                && executable.deletingLastPathComponent().deletingLastPathComponent().path == root
+        }
+    }
+
+    private static func allProcesses() -> [pid_t] {
+        let capacity = Int(proc_listallpids(nil, 0)) + 64
+        var buffer = [pid_t](repeating: 0, count: capacity)
+        let count = Int(proc_listallpids(&buffer, Int32(capacity * MemoryLayout<pid_t>.size)))
+        return Array(buffer.prefix(max(0, count)))
+    }
+
+    private static func executablePath(_ pid: pid_t) -> String {
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        return String(cString: buffer)
+    }
+
     static func hasDescendant(of root: pid_t, named name: String) -> Bool {
         var queue = [root]
         while let pid = queue.popLast() {

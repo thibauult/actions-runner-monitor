@@ -1,16 +1,19 @@
 import Foundation
 
-/// A self-hosted runner installed as a launchd service with `./svc.sh install`.
+/// A self-hosted runner, either installed as a launchd service with `./svc.sh install`
+/// or started by hand with `./run.sh` from a directory added in Settings.
 /// Everything here is read from files the runner itself wrote, so the app holds
 /// no knowledge of any particular runner.
 struct Runner: Identifiable, Hashable, Sendable {
-    /// launchd label, `actions.runner.<scope>.<name>`.
+    /// launchd label, `actions.runner.<scope>.<name>`, or `terminal.<path>` for a terminal runner.
     let label: String
     /// The launchd plist `svc.sh install` wrote; loading it starts the service.
-    let plistURL: URL
+    /// `nil` for a terminal runner, which the app can watch but not start.
+    let plistURL: URL?
     /// Runner name as registered on GitHub.
     let name: String
-    /// The service's stdout, where the listener prints one line per job start and end.
+    /// Where the listener's one line per job start and end ends up: the service's
+    /// stdout, or for a terminal runner its latest `_diag/Runner_*.log`.
     let logURL: URL
     /// Org, repo or enterprise the runner is registered to.
     let gitHubURL: URL?
@@ -19,6 +22,8 @@ struct Runner: Identifiable, Hashable, Sendable {
     let workDirectory: URL?
 
     var id: String { label }
+
+    var isService: Bool { plistURL != nil }
 
     var diagURL: URL? { workDirectory?.appendingPathComponent("_diag") }
 
@@ -52,10 +57,42 @@ enum RunnerDiscovery {
 
     static func discover() -> [Runner] {
         let files = (try? FileManager.default.contentsOfDirectory(at: launchAgentsURL, includingPropertiesForKeys: nil)) ?? []
-        return files
+        let services = files
             .filter { $0.lastPathComponent.hasPrefix(labelPrefix) && $0.pathExtension == "plist" }
             .compactMap(runner(fromServicePlist:))
+        // A directory that has since been installed as a service counts as that service.
+        let serviceDirectories = Set(services.compactMap(\.workDirectory?.path))
+        let terminal = Defaults.runnerDirectories
+            .map(URL.init(fileURLWithPath:))
+            .filter { !serviceDirectories.contains($0.path) }
+            .compactMap(runner(fromDirectory:))
+        return (services + terminal)
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// `nil` when `directory` holds no configured runner.
+    static func runner(fromDirectory directory: URL) -> Runner? {
+        guard let settings = runnerSettings(in: directory) else { return nil }
+        return Runner(
+            // Commas would break the hidden runners list.
+            label: "terminal.\(directory.path.replacingOccurrences(of: ",", with: "_"))",
+            plistURL: nil,
+            name: settings["agentName"] as? String ?? directory.lastPathComponent,
+            logURL: latestListenerLog(in: directory) ?? directory.appendingPathComponent("_diag/Runner.log"),
+            gitHubURL: (settings["gitHubUrl"] as? String).flatMap(URL.init(string:)),
+            agentID: settings["agentId"] as? Int,
+            workDirectory: directory
+        )
+    }
+
+    /// Each listener start writes a new `Runner_<utc timestamp>-utc.log`, so the
+    /// newest name is the current one.
+    private static func latestListenerLog(in directory: URL) -> URL? {
+        let diag = directory.appendingPathComponent("_diag")
+        let files = (try? FileManager.default.contentsOfDirectory(at: diag, includingPropertiesForKeys: nil)) ?? []
+        return files
+            .filter { $0.lastPathComponent.hasPrefix("Runner_") && $0.pathExtension == "log" }
+            .max { $0.lastPathComponent < $1.lastPathComponent }
     }
 
     static func runner(fromServicePlist url: URL) -> Runner? {

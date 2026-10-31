@@ -27,13 +27,13 @@ BIN="build/Actions Runner Monitor.app/Contents/MacOS/ActionsRunnerMonitor"
 
 Data flow, all derived from files the runner itself wrote (nothing is configured):
 
-1. **Discovery** (`Runner.swift`): each `actions.runner.*.plist` in `~/Library/LaunchAgents` is a runner. `StandardOutPath` is the log; `WorkingDirectory` holds `.runner` (name, org/repo URL, agent id).
+1. **Discovery** (`Runner.swift`): each `actions.runner.*.plist` in `~/Library/LaunchAgents` is a runner. `StandardOutPath` is the log; `WorkingDirectory` holds `.runner` (name, org/repo URL, agent id). Directories in the `runnerDirectories` setting add runners started with `./run.sh`: no plist, `isService` false, and the latest `_diag/Runner_*.log` as the log. `ProcessTable` finds their listener by executable path, since launchd doesn't know them.
 2. **State** (`Monitor.swift`): `RunnerProbe` runs `launchctl list` to see whether the service is up; a `Runner.Worker` child process means busy. `Monitor` (`@MainActor`, `ObservableObject`) polls in a loop at `Defaults.refreshInterval`, off the main thread. All subprocesses have timeouts. Failed probes keep the last state, and identical snapshots are not republished (republishing re-lays out the status item and can swallow clicks).
 3. **Jobs** (`LogParser.swift`): parses only the last 512 KB of the listener log (`Running job:` / `Job … completed with result:` lines), and only when the log changed.
 4. **Job → GitHub link** (`JobLinks.swift`): the listener log has no repo/run info, so `JobLinkResolver` matches jobs to `_diag/Worker_<utc>.log` files and reads repo, run id and check run id from the job message. Results are cached per file.
 5. **UI** (`Views.swift`): the panel, settings, and menu bar label (overall state: offline > busy > idle).
 6. **Self-management**: `SelfAgent.swift` writes and loads the app's own launchd agent (start at login + KeepAlive); `Startup.shouldRun` makes the launchd-started copy close a manually started one. `Notifier.swift` handles job-start notifications.
 
-Settings live in `UserDefaults.standard` (domain `io.github.thibauult.actions-runner-monitor`), defined in `Defaults.swift`: `refreshInterval`, `historyLimit`, `hiddenRunners`, `notifyOnJobStart`. They can be changed with `defaults write` (defaults: 3 s refresh, 10 jobs of history, notifications on; refresh and history are clamped to a minimum of 1).
+Settings live in `UserDefaults.standard` (domain `io.github.thibauult.actions-runner-monitor`), defined in `Defaults.swift`: `refreshInterval`, `historyLimit`, `hiddenRunners`, `notifyOnJobStart`, `runnerDirectories`. They can be changed with `defaults write` (defaults: 3 s refresh, 10 jobs of history, notifications on; refresh and history are clamped to a minimum of 1).
 
 The bundle id in `Info.plist` doubles as the launchd label for the self agent, and `build.sh` reads it from there.

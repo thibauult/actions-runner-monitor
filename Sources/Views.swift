@@ -30,17 +30,12 @@ struct MenuBarLabel: View {
     var body: some View {
         let visible = monitor.statuses.filter { !hidden.labels.contains($0.id) }
         let symbol = visible.overallState?.symbol ?? "questionmark.circle"
+        // No TimelineView here: one in the status item makes the menu unclickable once a job
+        // starts. The minutes update whenever the monitor publishes new state.
+        Image(nsImage: GitHubMark.image)
+        Image(systemName: symbol)
         if let job = visible.oldestCurrentJob {
-            // Ticks once a minute: a per-second label resizes the status item constantly
-            // and makes the menu unclickable.
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                Image(nsImage: GitHubMark.image)
-                Image(systemName: symbol)
-                Text(Format.minutes(from: job.startedAt, to: context.date))
-            }
-        } else {
-            Image(nsImage: GitHubMark.image)
-            Image(systemName: symbol)
+            Text(Format.minutes(from: job.startedAt, to: Date()))
         }
     }
 }
@@ -122,7 +117,7 @@ struct MonitorPanel: View {
     private var emptyMessage: String {
         if !monitor.hasLoaded { return "Looking for runners…" }
         if !monitor.statuses.isEmpty { return "All runners are hidden. Show them in Settings." }
-        return "No runners found. Install a runner as a service with ./svc.sh install and it shows up here."
+        return "No runners found. Install a runner as a service with ./svc.sh install and it shows up here, or add its folder in Settings."
     }
 }
 
@@ -145,12 +140,14 @@ struct RunnerSection: View {
                 Label(status.state.title, systemImage: status.state.symbol)
                     .foregroundStyle(status.state.color)
                     .font(.subheadline)
-                Toggle("Running", isOn: runningBinding)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .disabled(isPending)
-                    .help(status.state == .offline ? "Start this runner" : "Stop this runner")
+                if status.runner.isService {
+                    Toggle("Running", isOn: runningBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .disabled(isPending)
+                        .help(status.state == .offline ? "Start this runner" : "Stop this runner")
+                }
             }
 
             if let job = status.currentJob {
@@ -271,6 +268,8 @@ struct SettingsView: View {
     @AppStorage(Defaults.notifyOnJobStartKey) private var notifyOnJobStart = Defaults.defaultNotifyOnJobStart
     @State private var keepsRunning = SelfAgent.isInstalled
     @State private var agentError: String?
+    @State private var runnerDirectories = Defaults.runnerDirectories
+    @State private var directoryError: String?
 
     var body: some View {
         Form {
@@ -316,15 +315,39 @@ struct SettingsView: View {
                     Text("No runners found.").foregroundStyle(.secondary)
                 }
                 ForEach(monitor.statuses.map(\.runner)) { runner in
-                    Toggle(isOn: shown(runner)) {
-                        Text(runner.name)
-                        Text(runner.label)
+                    HStack {
+                        Toggle(isOn: shown(runner)) {
+                            Text(runner.name)
+                            Text(runner.isService ? runner.label : runner.workDirectory?.path ?? "")
+                        }
+                        if !runner.isService, let path = runner.workDirectory?.path {
+                            removeButton(for: path)
+                        }
                     }
                 }
+                // Added folders with no runner to show, such as one since deleted.
+                ForEach(unmatchedDirectories, id: \.self) { path in
+                    HStack {
+                        Text(path).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                        Spacer()
+                        removeButton(for: path)
+                    }
+                }
+                if let directoryError {
+                    Text(directoryError).font(.caption).foregroundStyle(.red)
+                }
             } header: {
-                Text("Runners")
+                HStack {
+                    Text("Runners")
+                    Spacer()
+                    Button(action: addRunnerDirectory) {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Add a runner started with ./run.sh")
+                }
             } footer: {
-                Text("Every runner installed with ./svc.sh install (an actions.runner.* agent in ~/Library/LaunchAgents) is picked up automatically.")
+                Text("Every runner installed with ./svc.sh install (an actions.runner.* agent in ~/Library/LaunchAgents) is picked up automatically. For a runner started with ./run.sh, use + to add its folder: the app can watch it but not start or stop it, and shows jobs from its latest run only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -341,6 +364,42 @@ struct SettingsView: View {
                 if show { hidden.labels.remove(runner.label) } else { hidden.labels.insert(runner.label) }
             }
         )
+    }
+
+    private var unmatchedDirectories: [String] {
+        let shown = Set(monitor.statuses.compactMap { $0.runner.isService ? nil : $0.runner.workDirectory?.path })
+        return runnerDirectories.filter { !shown.contains($0) }
+    }
+
+    private func removeButton(for path: String) -> some View {
+        Button {
+            setRunnerDirectories(runnerDirectories.filter { $0 != path })
+        } label: {
+            Image(systemName: "minus.circle")
+        }
+        .buttonStyle(.borderless)
+        .help("Remove this folder")
+    }
+
+    private func addRunnerDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.message = "Choose a folder where ./config.sh has been run"
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard RunnerDiscovery.runner(fromDirectory: url) != nil else {
+            directoryError = "\(url.path) has no .runner file. Run ./config.sh there first."
+            return
+        }
+        directoryError = nil
+        if !runnerDirectories.contains(url.path) { setRunnerDirectories(runnerDirectories + [url.path]) }
+    }
+
+    private func setRunnerDirectories(_ paths: [String]) {
+        runnerDirectories = paths
+        Defaults.runnerDirectories = paths
+        monitor.rediscover()
     }
 
     private func setKeepsRunning(_ enabled: Bool) {
