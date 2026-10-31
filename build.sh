@@ -3,6 +3,8 @@
 #   ./build.sh            build only
 #   ./build.sh --install  also copy it to ~/Applications and (re)start it
 #   ./build.sh --zip      also package build/ActionsRunnerMonitor.zip for a release
+#   ./build.sh --dmg      also package build/ActionsRunnerMonitor.dmg for a release
+# --zip and --dmg can be combined.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -38,11 +40,22 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$APP"
 echo "Built $APP"
 
-case "${1:-}" in
+for arg in "$@"; do
+case "$arg" in
 --zip)
   rm -f build/ActionsRunnerMonitor.zip
   ditto -c -k --keepParent "$APP" build/ActionsRunnerMonitor.zip
   echo "Packaged build/ActionsRunnerMonitor.zip"
+  ;;
+--dmg)
+  # The Applications link is the drag target shown when the image opens.
+  STAGING="build/obj/dmg"
+  rm -rf "$STAGING"
+  mkdir -p "$STAGING"
+  cp -R "$APP" "$STAGING/"
+  ln -s /Applications "$STAGING/Applications"
+  hdiutil create -volname "$NAME" -srcfolder "$STAGING" -ov -format UDZO build/ActionsRunnerMonitor.dmg
+  echo "Packaged build/ActionsRunnerMonitor.dmg"
   ;;
 --install)
   INSTALLED="$HOME/Applications/$NAME.app"
@@ -73,3 +86,4 @@ case "${1:-}" in
   exit 1
   ;;
 esac
+done

@@ -21,13 +21,15 @@ It needs no setup. It finds every runner you installed as a service with `./svc.
 
 ## Install
 
-Download `ActionsRunnerMonitor.zip` from the [latest release](../../releases/latest), unzip it, and move **Actions Runner Monitor.app** to `~/Applications` or `/Applications`.
+Download `ActionsRunnerMonitor.dmg` from the [latest release](../../releases/latest), open it, and drag **Actions Runner Monitor.app** to **Applications**.
 
 The release build is ad-hoc signed, not notarized, so macOS blocks it the first time it opens. To clear that, run:
 
 ```bash
-xattr -dr com.apple.quarantine ~/Applications/"Actions Runner Monitor.app"
+xattr -dr com.apple.quarantine /Applications/"Actions Runner Monitor.app"
 ```
+
+The commands below use `~/Applications`, where `./build.sh --install` puts the app. If you installed from the DMG, use `/Applications` instead.
 
 ### Build from source
 

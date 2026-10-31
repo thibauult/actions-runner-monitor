@@ -11,7 +11,8 @@ A macOS 14+ menu bar app (SwiftUI `MenuBarExtra`) that shows the state of self-h
 ```bash
 ./build.sh            # universal (arm64 + x86_64) app into build/
 ./build.sh --install  # also copy to ~/Applications and (re)start it (handles the launchd agent)
-./build.sh --zip      # also package build/ActionsRunnerMonitor.zip (what CI releases)
+./build.sh --zip      # also package build/ActionsRunnerMonitor.zip
+./build.sh --dmg      # also package build/ActionsRunnerMonitor.dmg (CI runs --zip --dmg and releases both)
 
 BIN="build/Actions Runner Monitor.app/Contents/MacOS/ActionsRunnerMonitor"
 "$BIN" --dump              # print discovered runners + parsed jobs, no UI (CI runs this as its only check)
